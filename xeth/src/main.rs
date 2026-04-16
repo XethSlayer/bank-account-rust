@@ -1,3 +1,108 @@
+use std::sync::{mpsc, Arc, Mutex};
+use std::thread;
+
+// Message enum
+enum Message {
+    NewJob(Job),
+    Terminate,
+}
+
+// Job type
+type Job = Box<dyn FnOnce() + Send + 'static>;
+
+// ThreadPool struct
+struct ThreadPool {
+    workers: Vec<Worker>,
+    sender: mpsc::Sender<Message>,
+}
+
+impl ThreadPool {
+    fn new(size: usize) -> ThreadPool {
+        assert!(size > 0);
+
+        let (sender, receiver) = mpsc::channel();
+
+        let receiver = Arc::new(Mutex::new(receiver));
+
+        let mut workers = Vec::with_capacity(size);
+
+        for id in 0..size {
+            workers.push(Worker::new(id, Arc::clone(&receiver)));
+        }
+
+        ThreadPool { workers, sender }
+    }
+
+    fn execute<F>(&self, f: F)
+    where
+        F: FnOnce() + Send + 'static,
+    {
+        let job = Box::new(f);
+        self.sender.send(Message::NewJob(job)).unwrap();
+    }
+}
+
+// Clean shutdown
+impl Drop for ThreadPool {
+    fn drop(&mut self) {
+        println!("Sending terminate message to all workers.");
+
+        for _ in &self.workers {
+            self.sender.send(Message::Terminate).unwrap();
+        }
+
+        println!("Shutting down workers.");
+
+        for worker in &mut self.workers {
+            println!("Shutting down worker {}", worker.id);
+
+            if let Some(thread) = worker.thread.take() {
+                thread.join().unwrap();
+            }
+        }
+    }
+}
+
+// Worker struct
+struct Worker {
+    id: usize,
+    thread: Option<thread::JoinHandle<()>>,
+}
+
+impl Worker {
+    fn new(id: usize, receiver: Arc<Mutex<mpsc::Receiver<Message>>>) -> Worker {
+        let thread = thread::spawn(move || loop {
+            let message = receiver.lock().unwrap().recv().unwrap();
+
+            match message {
+                Message::NewJob(job) => {
+                    println!("Worker {} got a job", id);
+                    job();
+                }
+                Message::Terminate => {
+                    println!("Worker {} terminating", id);
+                    break;
+                }
+            }
+        });
+
+        Worker {
+            id,
+            thread: Some(thread),
+        }
+    }
+}
+
 fn main() {
-    println!("Hello, world!");
+    let pool = ThreadPool::new(4);
+
+    for i in 1..=10 {
+        pool.execute(move || {
+            println!("Processing task {}", i);
+            thread::sleep(std::time::Duration::from_millis(500));
+            println!("Completed task {}", i);
+        });
+    }
+
+    println!("Main thread waiting...");
 }
