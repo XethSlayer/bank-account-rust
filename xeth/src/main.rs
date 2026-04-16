@@ -1,7 +1,8 @@
+//Assignment 3 concurrency
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
 
-// Message enum
+//Message enum
 enum Message {
     NewJob(Job),
     Terminate,
@@ -10,7 +11,7 @@ enum Message {
 // Job type
 type Job = Box<dyn FnOnce() + Send + 'static>;
 
-// ThreadPool struct
+//ThreadPool struct
 struct ThreadPool {
     workers: Vec<Worker>,
     sender: mpsc::Sender<Message>,
@@ -42,7 +43,7 @@ impl ThreadPool {
     }
 }
 
-// Clean shutdown
+//Clean shutdown
 impl Drop for ThreadPool {
     fn drop(&mut self) {
         println!("Sending terminate message to all workers.");
@@ -63,7 +64,7 @@ impl Drop for ThreadPool {
     }
 }
 
-// Worker struct
+//Worker struct
 struct Worker {
     id: usize,
     thread: Option<thread::JoinHandle<()>>,
